@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <link rel="shortcut icon" href="%PUBLIC_URL%/favicon.ico" />
+  <link href='//fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,600|Roboto Mono' rel='stylesheet'
+    type='text/css' />
+  <link href='//fonts.googleapis.com/css?family=Dosis:500&text=LabelStudio' rel='stylesheet' type='text/css' />
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="theme-color" content="#000000">
+  <!--
+      manifest.json provides metadata used when your web app is added to the
+      homescreen on Android. See https://developers.google.com/web/fundamentals/web-app-manifest/
+    -->
+  <link rel="manifest" href="%PUBLIC_URL%/manifest.json">
+  <link rel="stylesheet" href="%PUBLIC_URL%/styles/main.css">
+  <!--
+      Notice the use of %PUBLIC_URL% in the tags above.
+      It will be replaced with the URL of the `public` folder during the build.
+      Only files inside the `public` folder can be referenced from the HTML.
+
+      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
+      work correctly both with client-side routing and a non-root public URL.
+      Learn how to configure a non-root public URL by running `npm run build`.
+      -->
+  <title>NIA Satellite Data</title>
+</head>
+
+<body>
+  <noscript>
+    You need to enable JavaScript to run this app.
+  </noscript>
+
+  <div id="header">
+    <button style="display: block;" onclick="document.getElementById('json-upload-button').click()">Select JSON</button>
+    <input type="file" id='json-upload-button' style="display: none;" accept="application/json">
+    <!-- <button style="display: block;" onclick="document.getElementById('image-upload-button').click()">Select Image</button>
+      <input type="file" id='image-upload-button' style="display: none;" accept="image/png"> -->
+    <button id='json-download-button'>
+      Download JSON
+    </button>
+    <!-- <a id="logo" href="/">
+        <img src="./images/ls_logo.png" alt="label studio logo">
+        <span style="font-size: 1.2em;">Label Studio</span>
+      </a>
+      <ul id="nav">
+        <li><a style="margin-right: 1em; text-decoration: underline;" href="https://labelstud.io/guide">Guide</a></li>
+        <li><a class="github-button" href="https://github.com/heartexlabs/label-studio"
+           data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star heartexlabs/label-studio on GitHub"><img src="./images/GitHub-Mark-64px.png" height="25" /></a></li>
+      </ul> -->
+  </div>
+
+  <div id="ls-container">
+    <div id="label-studio"></div>
+  </div>
+  <!-- <footer class="footer">Made by <a target="_blank" href="https://heartex.net">Heartex</a> in San Francisco
+      <br/><br/>
+      <img src="./images/3nowhite.svg" height="80" />
+    </footer> -->
+  <script>
+    var upload_button = document.querySelector("#json-upload-button"), result;
+    upload_button.addEventListener("change", handleJSONFile);
+    function handleJSONFile() {
+      var fileList = this.files;
+      if (fileList.length > 1) {
+        alert('Please upload a single json file at the same time');
+      }
+      var reader = new FileReader();
+      reader.addEventListener('load', function () {
+        json_info = JSON.parse(reader.result);
+        window.json_info = json_info;
+        var sample = json_info.features[0].properties, appType;
+        if (sample.building_imcoords !== 'EMPTY') {
+          appType = "building"
+        } else if (sample.road_imcoords !== 'EMPTY') {
+          appType = "road"
+        } else {
+          appType = "object"
+        }
+        var imageId = json_info.features[0].properties.image_id;
+        if (imageId && imageId.match && imageId.match('tif')) {
+          imageId = imageId.replace('tif', 'png');
+          imageId = imageId.replace('PS4', 'PS3');
+        }
+        var geometry = json_info.features[0].geometry;
+        var appInfo = {
+          appType: appType,
+          geometry: geometry,
+          imageId: imageId,
+          fileName: fileList[0].name
+        }
+        window.APP_INFO = appInfo;
+        var results = [];
+        if (APP_INFO.appType === "object") {
+          APP_INFO.classMap = {
+            'small ship': '1',
+            'large ship': '2',
+            'civilian aircraft': '3',
+            'military aircraft': '4',
+            'small car': '5',
+            'bus': '6',
+            'truck': '7',
+            'train': '8',
+            'crane': '9',
+            'bridge': '10',
+            'oil tank': '11',
+            'dam': '12',
+            'indoor playground': '13',
+            'outdoor playground': '14',
+            'helipad': '15',
+            'roundabout': '16',
+            'helicopter': '17',
+            'individual container': '18',
+            'grouped container': '19',
+            'swimming pool': '20',
+            'etc': '21',
+          }
+          for (var i = 0; i < json_info.features.length; i++) {
+            var value = json_info.features[i].properties.object_imcoords.split(',').map(v => parseFloat(v));
+            var angle = parseFloat(json_info.features[i].properties.object_angle);
+            var type = json_info.features[i].properties.type_name;
+            var xs = []; ys = []; xrs = []; yrs = [];
+            for (var j = 0; j < value.length; j++) {
+              if (j % 2 === 0) {
+                xs.push(value[j]);
+              } else {
+                ys.push(value[j]);
+              }
+            }
+            var width = Math.sqrt(Math.pow(xs[1] - xs[0], 2) + Math.pow(ys[1] - ys[0], 2));
+            var height = Math.sqrt(Math.pow(xs[2] - xs[1], 2) + Math.pow(ys[2] - ys[1], 2));
+            results.push(
+              {
+                "from_name": "tag",
+                "id": `annotation_${i}`,
+                "source": "$image",
+                "to_name": "img",
+                "type": "rectanglelabels",
+                "value": {
+                  "rectanglelabels": [
+                    `${type}`
+                  ],
+                  "rotation": -angle * 180 / Math.PI,
+                  "width": width / 1024 * 100,
+                  "height": height / 1024 * 100,
+                  "x": xs[0] / 1024 * 100,
+                  "y": ys[0] / 1024 * 100,
+                }
+              },
+            );
+          }
+          var config = `
+              <View>
+                <Image name="img" value="$image" zoom="true"></Image>
+                <RectangleLabels name="tag" toName="img">
+                  <Label value="small ship"></Label>
+                  <Label value="large ship"></Label>  
+                  <Label value="civilian aircraft"></Label>  
+                  <Label value="military aircraft"></Label>  
+                  <Label value="small car"></Label>  
+                  <Label value="bus"></Label>  
+                  <Label value="truck"></Label>  
+                  <Label value="train"></Label>  
+                  <Label value="crane"></Label>  
+                  <Label value="bridge"></Label>  
+                  <Label value="oil tank"></Label>  
+                  <Label value="dam"></Label> 
+                  <Label value="indoor playground"></Label> 
+                  <Label value="helipad"></Label> 
+                  <Label value="roundabout"></Label> 
+                  <Label value="helicopter"></Label> 
+                  <Label value="outdoor playground"></Label> 
+                  <Label value="swimming pool"></Label> 
+                  <Label value="individual container"></Label> 
+                  <Label value="grouped container"></Label> 
+                  <Label value="etc"></Label> 
+                </RectangleLabels>
+              </View>
+            `;
+        } else if (APP_INFO.appType === "building") {
+          APP_INFO.classMap = {
+            '소형 시설': '1',
+            '아파트': '2',
+            '공장': '3',
+            '컨테이너 박스': '4',
+            '중형 단독 시설': '5',
+            '대형 시설': '6',
+            '기타': '7',
+            '': '8'
+          }
+          var config = `
+            <View>
+              <Image name="img" value="$image" zoom="true"></Image>
+              <PolygonLabels name="tag" toName="img">
+                <Label value="소형 시설"></Label>
+                <Label value="아파트"></Label>
+                <Label value="공장"></Label>
+                <Label value="컨테이너 박스"></Label>
+                <Label value="중형 단독 시설"></Label>
+                <Label value="대형 시설"></Label>
+                <Label value=""></Label>
+              </PolygonLabels>
+            </View>
+            `;
+          for (var i = 0; i < json_info.features.length; i++) {
+            var value = json_info.features[i].properties.building_imcoords.split(',').map(v => parseFloat(v));
+            var type = json_info.features[i].properties.type_name;
+            var points = [];
+            for (var j = 0; j < value.length; j += 2) {
+              points.push([
+                value[j] / 1024 * 100,
+                value[j + 1] / 1024 * 100
+              ])
+            }
+            results.push({
+              "from_name": "tag",
+              "id": `annotation_${i}`,
+              "source": "$image",
+              "to_name": "img",
+              "type": "polygonlabels",
+              "value": {
+                "polygonlabels": [
+                  `${type}`
+                ],
+                "points": points
+              }
+            });
+          }
+        } else if (APP_INFO.appType === "road") {
+          APP_INFO.classMap = {
+            'Mortorway': '1',
+            'Primary': '2',
+            'Secondary': '3',
+            'Tertiary': '4',
+            'Residential': '5',
+            'Unclassified': '6',
+            '기타': '7',
+            '': '7',
+          }
+          var config = `
+            <View>
+              <Image name="img" value="$image" zoom="true"></Image>
+              <PolygonLabels name="tag" toName="img">
+                <Label value="Mortorway"></Label>
+                <Label value="Primary"></Label>
+                <Label value="Secondary"></Label>
+                <Label value="Tertiary"></Label>
+                <Label value="Residential"></Label>
+                <Label value="Unclassified"></Label>
+                <Label value="기타"></Label>
+              </PolygonLabels>
+            </View>
+            `;
+          for (var i = 0; i < json_info.features.length; i++) {
+            var value = json_info.features[i].properties.road_imcoords.split(',').map(v => parseFloat(v));
+            var type = json_info.features[i].properties.type_name;
+            var points = [];
+            for (var j = 0; j < value.length; j += 2) {
+              points.push([
+                value[j] / 1024 * 100,
+                value[j + 1] / 1024 * 100
+              ])
+            }
+            results.push({
+              "from_name": "tag",
+              "id": `annotation_${i}`,
+              "source": "$image",
+              "to_name": "img",
+              "type": "polygonlabels",
+              "value": {
+                "polygonlabels": [
+                  `${type}`
+                ],
+                "points": points
+              }
+            });
+          }
+        } else {
+          alert(`not implemented yet.. for ${APP_INFO.appType}`);
+        }
+        // console.log(results);
+        var labelStudio = new LabelStudio('label-studio', {
+          config: config,
+
+          interfaces: [
+            "panel",
+            "update",
+            "controls",
+            "side-column",
+            "completions:menu",
+            "completions:add-new",
+            "completions:delete",
+          ],
+
+          user: {
+            pk: 1,
+            firstName: "User",
+            lastName: ""
+          },
+
+          task: {
+            completions: [
+              {
+                "id": "sample",
+                "lead_time": 1.0,
+                "result": results
+              }
+            ],
+            predictions: [],
+            id: 1,
+            data: {
+              "image": `./images/${imageId}`
+            }
+          },
+        });
+        window.labelStudio = labelStudio;
+      });
+      reader.readAsText(fileList[0]);
+    }
+    const download_button = document.querySelector("#json-download-button");
+    download_button.addEventListener("click", function () {
+      // console.log('download json button');
+      var new_json_info = {
+        features: [],
+        type: "FeatureCollection"
+      };
+      // if (json_info) {
+      //   console.log(json_info);
+      //   console.log(json_info.features[0].properties.object_imcoords);
+      //   console.log(json_info.features[0].properties.building_imcoords);
+      //   console.log(json_info.features[0].properties.road_imcoords);
+      //   console.log(json_info.features[0].properties.object_angle);
+      // }
+      var completionResult = labelStudio.completionStore.selected.serializeCompletion();
+      if (APP_INFO.appType === "object") {
+        // for (var i = 0; i < completionResult.length; i++) {
+        for (var obj of completionResult) {
+          var tl = [obj.value.x / 100 * obj.original_width, obj.value.y / 100 * obj.original_height];
+          var tr = [(obj.value.x + obj.value.width) / 100 * obj.original_width, obj.value.y / 100 * obj.original_height];
+          var bl = [obj.value.x / 100 * obj.original_width, (obj.value.y + obj.value.height) / 100 * obj.original_height];
+          var br = [(obj.value.x + obj.value.width) / 100 * obj.original_width, (obj.value.y + obj.value.height) / 100 * obj.original_height];
+          // console.log(tl, tr, bl, br);
+
+          var rtr = rotateByTheta(tr, tl, obj.value.rotation * Math.PI / 180);
+          var rbl = rotateByTheta(bl, tl, obj.value.rotation * Math.PI / 180);
+          var rbr = rotateByTheta(br, tl, obj.value.rotation * Math.PI / 180);
+          // console.log(tl, rtr, rbl, rbr);
+          // console.log(-obj.value.rotation * Math.PI / 180);
+
+          new_json_info.features.push({
+            geometry: APP_INFO.geometry,
+            properties: {
+              road_imcoords: "EMPTY",
+              building_imcoords: "EMPTY",
+              object_imcoords: tl.concat(rtr, rbr, rbl).reduce((arr, cur) => { return arr += (cur + ',') }, '').slice(0, -1),
+              object_angle: -obj.value.rotation * Math.PI / 180,
+              image_id: APP_INFO.imageId,
+              ingest_time: new Date().toISOString(),
+              type_id: APP_INFO.classMap[obj.value.rectanglelabels[0]],
+              type_name: obj.value.rectanglelabels[0]
+            }
+          });
+        }
+      } else if (APP_INFO.appType === "building") {
+        for (var obj of completionResult) {
+          var stretchedPoints = [];
+          for (var point of obj.value.points) {
+            var x = point[0] / 100 * obj.original_width;
+            var y = point[1] / 100 * obj.original_height;
+            stretchedPoints.push(x);
+            stretchedPoints.push(y);
+          }
+          new_json_info.features.push({
+            geometry: APP_INFO.geometry,
+            properties: {
+              road_imcoords: "EMPTY",
+              building_imcoords: stretchedPoints.reduce((arr, cur) => { return arr += (cur + ',') }, '').slice(0, -1),
+              object_imcoords: "EMPTY",
+              image_id: APP_INFO.imageId,
+              ingest_time: new Date().toISOString(),
+              type_id: APP_INFO.classMap[obj.value.polygonlabels[0]],
+              type_name: obj.value.polygonlabels[0]
+            }
+          });
+        }
+      } else if (APP_INFO.appType === "road") {
+        for (var obj of completionResult) {
+          var stretchedPoints = [];
+          for (var point of obj.value.points) {
+            var x = point[0] / 100 * obj.original_width;
+            var y = point[1] / 100 * obj.original_height;
+            stretchedPoints.push(x);
+            stretchedPoints.push(y);
+          }
+          new_json_info.features.push({
+            geometry: APP_INFO.geometry,
+            properties: {
+              road_imcoords: stretchedPoints.reduce((arr, cur) => { return arr += (cur + ',') }, '').slice(0, -1),
+              building_imcoords: "EMPTY",
+              object_imcoords: "EMPTY",
+              image_id: APP_INFO.imageId,
+              ingest_time: new Date().toISOString(),
+              type_id: APP_INFO.classMap[obj.value.polygonlabels[0]],
+              type_name: obj.value.polygonlabels[0]
+            }
+          });
+        }
+      } else {
+        alert(`not implemented .. ${APP_INFO.appType}`);
+
+      }
+      // console.log(labelStudio.completionStore.selected.serializeCompletion());
+      // console.log(new_json_info);
+      var blob = new Blob([JSON.stringify(new_json_info, 0, 4)], { type: "text/plain;charset=utf-8" });
+      var link = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = link;
+      a.target = "_blank";
+      a.download = APP_INFO.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    });
+  </script>
+  <script>
+    window.rotateByTheta = function rotateByTheta(point, anchor, angle) {
+      if (!anchor) {
+        anchor = [0, 0];
+      }
+      var res = [];
+      res.push(Math.cos(angle) * (point[0] - anchor[0]) - Math.sin(angle) * (point[1] - anchor[1]));
+      res.push(Math.sin(angle) * (point[0] - anchor[0]) + Math.cos(angle) * (point[1] - anchor[1]));
+      res[0] += anchor[0];
+      res[1] += anchor[1];
+      return res;
+    };
+
+    (function (d, o) {
+      d.domReady = function (n, a) {
+        o.addEventListener && o.addEventListener("DOMContentLoaded", function e(t) {
+          o.removeEventListener("DOMContentLoaded", e), n.call(a || d, t)
+        })
+          || o.attachEvent && o.attachEvent("onreadystatechange", function e(t) {
+            "complete" === o.readyState && (o.detachEvent("onreadystatechange", e), n.call(a || d, t))
+          })
+      }
+    })(window, document);
+  </script>
+  <script>
+    domReady(function () {
+      window.json_info = null;
+      var labelStudio = new LabelStudio('label-studio', {
+        config: `
+              <View>
+                <Image name="img" value="$image" zoom="true"></Image>
+                <RectangleLabels name="tag" toName="img">
+                  <Label value="풍선"></Label>
+                  <Label value="아이"></Label>
+                </RectangleLabels>
+              </View>
+            `,
+
+        interfaces: [
+          "panel",
+          "update",
+          "controls",
+          "side-column",
+          "completions:menu",
+          "completions:add-new",
+          "completions:delete",
+          "predictions:menu",
+        ],
+
+        user: {
+          pk: 1,
+          firstName: "User",
+          lastName: ""
+        },
+
+        task: {
+          completions: [
+            {
+              "id": "sample",
+              "lead_time": 1.0,
+              "result": [
+                {
+                  "from_name": "tag",
+                  "id": "annotation_0",
+                  "source": "$image",
+                  "to_name": "img",
+                  "type": "rectanglelabels",
+                  "value": {
+                    "rectanglelabels": [
+                      "풍선"
+                    ],
+                    "rotation": 0,
+                    "width": 34,
+                    "height": 33,
+                    "x": 30,
+                    "y": 12
+                  }
+                },
+                {
+                  "from_name": "tag",
+                  "id": "annotation_1",
+                  "source": "$image",
+                  "to_name": "img",
+                  "type": "rectanglelabels",
+                  "value": {
+                    "rectanglelabels": [
+                      "아이"
+                    ],
+                    "rotation": 0,
+                    "width": 37,
+                    "height": 61,
+                    "x": 12,
+                    "y": 35
+                  }
+                },
+              ]
+            }
+          ],
+          id: 1,
+          data: {
+            "image": "./images/child-play.jpg"
+          }
+        },
+      });
+      window.labelStudio = labelStudio;
+      window.APP_INFO = {
+        appType: "object",
+        geometry: null,
+        imageId: "child-play.jpg",
+        classMap: {
+          "풍선": "1",
+          "아이": "2"
+        },
+        fileName: "child-play-sample.json"
+      }
+    });
+  </script>
+</body>
+
+</html>
