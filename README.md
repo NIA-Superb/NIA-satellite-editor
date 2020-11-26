@@ -32,10 +32,6 @@
 
 No changes have been made to original source code([label-studio-frontend](https://github.com/https://github.com/heartexlabs/label-studio-frontend)). All changes could be found from public/index.html
 
-## Changes
-
-No changes have been made to original source code([label-studio-frontend](https://github.com/https://github.com/heartexlabs/label-studio-frontend)). All changes could be found from public/index.html
-
 ## Install
 
 ```bash
